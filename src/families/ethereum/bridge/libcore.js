@@ -14,14 +14,14 @@ import { scanAccounts } from "../../../libcore/scanAccounts";
 import { getMainAccount } from "../../../account";
 import { getAccountNetworkInfo } from "../../../libcore/getAccountNetworkInfo";
 import { withLibcore } from "../../../libcore/access";
-import { getGasLimit } from "../transaction";
+import { getGasLimit, inferEthereumGasLimitRequest } from "../transaction";
 import { getCoreAccount } from "../../../libcore/getCoreAccount";
 import { sync } from "../../../libcore/syncAccount";
 import { getFeesForTransaction } from "../../../libcore/getFeesForTransaction";
 import { libcoreBigIntToBigNumber } from "../../../libcore/buildBigNumber";
 import { makeLRUCache } from "../../../cache";
 import { validateRecipient } from "../../../bridge/shared";
-import type { Transaction } from "../types";
+import type { Transaction, EthereumGasLimitRequest } from "../types";
 import signOperation from "../libcore-signOperation";
 import broadcast from "../libcore-broadcast";
 
@@ -144,16 +144,31 @@ const getTransactionStatus = async (a, t) => {
   });
 };
 
-const estimateGasLimitForERC20 = makeLRUCache(
-  (account: Account, addr: string) =>
+const getDryRunGasLimit = makeLRUCache(
+  (account: Account, addr: string, request: EthereumGasLimitRequest) =>
     withLibcore(async (core) => {
       const { coreAccount } = await getCoreAccount(core, account);
       const ethereumLikeAccount = await coreAccount.asEthereumLikeAccount();
-      const r = await ethereumLikeAccount.getEstimatedGasLimit(addr);
+      const r = await ethereumLikeAccount.getDryRunGasLimit(addr, request);
       const bn = await libcoreBigIntToBigNumber(r);
       return bn;
     }),
-  (a, addr) => a.id + "|" + addr
+  (a, addr, r) =>
+    a.id +
+    "|" +
+    addr +
+    "|" +
+    String(r.from) +
+    "+" +
+    String(r.to) +
+    "+" +
+    String(r.value) +
+    "+" +
+    String(r.data) +
+    "+" +
+    String(r.gasPrice) +
+    "+" +
+    String(r.amplifier)
 );
 
 const prepareTransaction = async (a, t: Transaction): Promise<Transaction> => {
@@ -165,34 +180,35 @@ const prepareTransaction = async (a, t: Transaction): Promise<Transaction> => {
     networkInfo = ni;
   }
 
+  const gasPrice = t.gasPrice || networkInfo.gasPrice;
+
+  if (t.gasPrice !== gasPrice || t.networkInfo !== networkInfo) {
+    t = { ...t, networkInfo, gasPrice };
+  }
+
   let estimatedGasLimit;
   if (tAccount.type === "TokenAccount") {
-    estimatedGasLimit = await estimateGasLimitForERC20(
+    estimatedGasLimit = await getDryRunGasLimit(
       a,
-      tAccount.token.contractAddress
+      tAccount.token.contractAddress,
+      inferEthereumGasLimitRequest(a, t)
     );
   } else if (t.recipient) {
     const { recipientError } = await validateRecipient(a.currency, t.recipient);
     if (!recipientError) {
-      estimatedGasLimit = await estimateGasLimitForERC20(a, t.recipient);
+      estimatedGasLimit = await getDryRunGasLimit(
+        a,
+        t.recipient,
+        inferEthereumGasLimitRequest(a, t)
+      );
     }
   }
-  if (
-    estimatedGasLimit &&
-    t.estimatedGasLimit &&
-    t.estimatedGasLimit.eq(estimatedGasLimit)
-  ) {
-    estimatedGasLimit = t.estimatedGasLimit;
-  }
-
-  const gasPrice = t.gasPrice || networkInfo.gasPrice;
 
   if (
-    t.gasPrice !== gasPrice ||
-    t.estimatedGasLimit !== estimatedGasLimit ||
-    t.networkInfo !== networkInfo
+    !t.estimatedGasLimit ||
+    (estimatedGasLimit && !estimatedGasLimit.eq(t.estimatedGasLimit))
   ) {
-    return { ...t, networkInfo, estimatedGasLimit, gasPrice };
+    t.estimatedGasLimit = estimatedGasLimit;
   }
 
   return t;

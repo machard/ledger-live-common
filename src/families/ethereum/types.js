@@ -13,6 +13,16 @@ import type {
   Spec,
 } from "../../libcore/types";
 
+export type EthereumGasLimitRequest = {
+  from?: string,
+  to?: string,
+  value?: string,
+  data?: string,
+  gas?: string,
+  gasPrice?: string,
+  amplifier?: number,
+};
+
 declare class CoreEthereumLikeAddress {
   toEIP55(): Promise<string>;
 }
@@ -54,6 +64,10 @@ declare class CoreEthereumLikeTransactionBuilder {
 }
 
 declare class CoreEthereumLikeAccount {
+  getDryRunGasLimit(
+    address: string,
+    request: EthereumGasLimitRequest
+  ): Promise<CoreBigInt>;
   getERC20Accounts(): Promise<CoreERC20LikeAccount[]>;
   buildTransaction(): Promise<CoreEthereumLikeTransactionBuilder>;
   broadcastRawTransaction(signed: string): Promise<string>;
@@ -226,6 +240,9 @@ export const reflect = (declare: (string, Spec) => void) => {
       },
       broadcastRawTransaction: {
         params: ["hex"],
+      },
+      getDryRunGasLimit: {
+        returns: "BigInt",
       },
       getERC20Accounts: {
         returns: ["ERC20LikeAccount"],

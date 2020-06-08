@@ -105,8 +105,6 @@ export async function inferTransactions(
         ? BigNumber(0)
         : inferAmount(account, opts.amount || "0.001");
 
-      transaction = await bridge.prepareTransaction(mainAccount, transaction);
-
       return { account, transaction };
     })
   );

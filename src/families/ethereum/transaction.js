@@ -1,6 +1,14 @@
 // @flow
+import invariant from "invariant";
+import eip55 from "eip55";
 import { BigNumber } from "bignumber.js";
-import type { Transaction, TransactionRaw } from "./types";
+import { log } from "@ledgerhq/logs";
+import { NotEnoughBalance } from "@ledgerhq/errors";
+import type {
+  Transaction,
+  TransactionRaw,
+  EthereumGasLimitRequest,
+} from "./types";
 import {
   fromTransactionCommonRaw,
   toTransactionCommonRaw,
@@ -77,5 +85,97 @@ export const toTransactionRaw = (t: Transaction): TransactionRaw => {
     },
   };
 };
+
+const ethereumTransferMethodID = Buffer.from("a9059cbb", "hex");
+
+export function serializeTransactionData(
+  account: Account,
+  transaction: Transaction
+): ?Buffer {
+  const { subAccountId } = transaction;
+  const subAccount = subAccountId
+    ? account.subAccounts &&
+      account.subAccounts.find((t) => t.id === subAccountId)
+    : null;
+  if (!subAccount) return;
+  const recipient = eip55.encode(transaction.recipient);
+  const { balance } = subAccount;
+  let amount;
+  if (transaction.useAllAmount) {
+    amount = balance;
+  } else {
+    if (!transaction.amount) return;
+    amount = BigNumber(transaction.amount);
+    if (amount.gt(subAccount.balance)) {
+      throw new NotEnoughBalance();
+    }
+  }
+  const to256 = Buffer.concat([
+    Buffer.alloc(12),
+    Buffer.from(recipient.replace("0x", ""), "hex"),
+  ]);
+  invariant(to256.length === 32, "recipient is invalid");
+  const amountHex = amount.toString(16);
+  const amountBuf = Buffer.from(
+    amountHex.length % 2 === 0 ? amountHex : "0" + amountHex,
+    "hex"
+  );
+  const amount256 = Buffer.concat([
+    Buffer.alloc(32 - amountBuf.length),
+    amountBuf,
+  ]);
+  return Buffer.concat([ethereumTransferMethodID, to256, amount256]);
+}
+
+export function inferEthereumGasLimitRequest(
+  account: Account,
+  transaction: Transaction
+): EthereumGasLimitRequest {
+  const r: EthereumGasLimitRequest = {
+    from: account.freshAddress,
+    amplifier: 2,
+  };
+  if (transaction.gasPrice) {
+    r.gasPrice = transaction.gasPrice.toString();
+  }
+  try {
+    const data = serializeTransactionData(account, transaction);
+    if (data) {
+      r.data = "0x" + data.toString("hex");
+    }
+  } catch (e) {
+    log("warn", "couldn't serializeTransactionData: " + e);
+  }
+
+  const { subAccountId } = transaction;
+  const subAccount = subAccountId
+    ? account.subAccounts &&
+      account.subAccounts.find((t) => t.id === subAccountId)
+    : null;
+
+  if (subAccount && subAccount.type === "TokenAccount") {
+    const { token } = subAccount;
+    r.value = "0";
+    r.to = token.contractAddress;
+  } else {
+    if (transaction.recipient) {
+      try {
+        const recipient = eip55.encode(transaction.recipient);
+        r.to = recipient;
+      } catch (e) {
+        log("warn", "couldn't encode recipient: " + e);
+      }
+    }
+    if (transaction.useAllAmount) {
+      r.value = account.balance.toString();
+    } else {
+      if (transaction.amount) {
+        r.value = transaction.amount.toString();
+      }
+    }
+  }
+
+  return r;
+}
 
 export default { formatTransaction, fromTransactionRaw, toTransactionRaw };
