@@ -1,41 +1,67 @@
-import { IStorage } from "./storage/types";
+import { Address, TX, IStorage, Output } from "./storage/types";
 import EventEmitter from "./utils/eventemitter";
-import { range, findLastIndex } from "lodash";
+import { maxBy, random, range, some, sortBy, takeWhile } from "lodash";
 import { IExplorer } from "./explorer/types";
-import { IDerivation } from "./derivation/types";
-
-declare interface IWallet {
-  on(event: "address-syncing", listener: () => void): this;
-  on(event: "address-synced", listener: () => void): this;
-  on(event: "account-syncing", listener: () => void): this;
-  on(event: "account-synced", listener: () => void): this;
-  on(event: "derivationMode-syncing", listener: () => void): this;
-  on(event: "derivationMode-synced", listener: () => void): this;
-  on(event: "syncing", listener: () => void): this;
-  on(event: "synced", listener: () => void): this;
-}
+import { ICrypto } from "./crypto/types";
+import { IWallet } from "./types";
 
 class Wallet extends EventEmitter implements IWallet {
   storage: IStorage;
   explorer: IExplorer;
-  derivation: IDerivation;
+  crypto: ICrypto;
   xpub: string;
   GAP: number = 20;
   syncing: boolean = false;
   // need to be bigger than the number of tx from the same address that can be in the same block
   txsSyncArraySize: number = 1000;
 
-  constructor({ storage, explorer, derivation, xpub }) {
+  constructor({ storage, explorer, crypto, xpub }) {
     super();
     this.storage = storage;
     this.explorer = explorer;
-    this.derivation = derivation;
+    this.crypto = crypto;
     this.xpub = xpub;
   }
 
-  // sync address and store data
+  async fetchHydrateAndStoreNewTxs(
+    address: string,
+    derivationMode: string,
+    account: number,
+    index: number
+  ) {
+    const lastTx = await this.storage.getLastTx({
+      derivationMode,
+      account,
+      index,
+    });
+
+    let txs = await this.explorer.getAddressTxsSinceLastTxBlock(
+      this.txsSyncArraySize,
+      address,
+      lastTx
+    );
+    // mutate to hydrate faster
+    txs.forEach((tx) => {
+      // no need to keep that as it changes
+      delete tx.confirmations;
+
+      tx.derivationMode = derivationMode;
+      tx.account = account;
+      tx.index = index;
+      tx.address = address;
+
+      tx.outputs.forEach((output) => {
+        if (output.address === address) {
+          output.output_hash = tx.id;
+        }
+      });
+    });
+    const inserted = await this.storage.appendTxs(txs);
+    return inserted;
+  }
+
   async syncAddress(derivationMode: string, account: number, index: number) {
-    const address = this.derivation.getAddress(
+    const address = this.crypto.getAddress(
       derivationMode,
       this.xpub,
       account,
@@ -47,68 +73,50 @@ class Wallet extends EventEmitter implements IWallet {
 
     // TODO handle eventual reorg case using lastBlock
 
-    const fetchHydrateAndStore = async (lastBlock) => {
-      let txs = await this.explorer.getNAddressTransactionsSinceBlockExcludingBlock(
-        this.txsSyncArraySize,
+    let added = 0;
+    let total = 0;
+    while (
+      (added = await this.fetchHydrateAndStoreNewTxs(
         address,
-        lastBlock
-      );
-      // mutate to hydrate faster
-      txs.forEach((tx) => {
-        tx.derivationMode = derivationMode;
-        tx.account = account;
-        tx.index = index;
-        tx.address = address;
-        // we calculate it from storage instead of having to update continually
-        // as new block are mined
-        delete tx.confirmations;
-      });
-      await this.storage.appendAddressTxs(txs);
-      return txs.length;
-    };
-
-    // can be undefined
-    let lastBlock = await this.storage.getAddressLastBlock(
-      derivationMode,
-      account,
-      index
-    );
-
-    while (await fetchHydrateAndStore(lastBlock)) {
-      lastBlock = await this.storage.getAddressLastBlock(
         derivationMode,
         account,
         index
-      );
+      ))
+    ) {
+      total += added;
     }
 
-    this.emit("address-synced", { ...data, lastBlock });
+    this.emit("address-synced", { ...data, total });
 
-    return lastBlock;
+    const lastTx = await this.storage.getLastTx({
+      derivationMode,
+      account,
+      index,
+    });
+
+    return !!lastTx;
   }
 
-  // sync account
+  async checkAddressesBlock(
+    derivationMode: string,
+    account: number,
+    index: number
+  ) {
+    let addressesResults = await Promise.all(
+      range(this.GAP).map((_, key) =>
+        this.syncAddress(derivationMode, account, index + key)
+      )
+    );
+    return some(addressesResults, (lastTx) => !!lastTx);
+  }
+
   async syncAccount(derivationMode: string, account: number) {
     this.emit("account-syncing", { derivationMode, account });
 
-    // can be undefined
-    let index =
-      (await this.storage.getAccountLastIndex(derivationMode, account)) || 0;
+    let index = 0;
 
-    const checkAddressesBlock = async (index) => {
-      let addressesResults = await Promise.all(
-        range(this.GAP).map((_, key) =>
-          this.syncAddress(derivationMode, account, index + key)
-        )
-      );
-      return (
-        findLastIndex(addressesResults, (lastBlockHash) => !!lastBlockHash) + 1
-      );
-    };
-
-    let nb;
-    while ((nb = await checkAddressesBlock(index))) {
-      index += nb;
+    while (await this.checkAddressesBlock(derivationMode, account, index)) {
+      index += this.GAP;
     }
 
     this.emit("account-synced", { derivationMode, account, index });
@@ -116,13 +124,10 @@ class Wallet extends EventEmitter implements IWallet {
     return index;
   }
 
-  // sync derivation mode
   async syncDerivationMode(derivationMode: string) {
     this.emit("derivationMode-syncing", { derivationMode });
 
-    let account =
-      // can be undefined
-      (await this.storage.getDerivationModeLastAccount(derivationMode)) || 0;
+    let account = 0;
 
     while (await this.syncAccount(derivationMode, account)) {
       account++;
@@ -133,9 +138,7 @@ class Wallet extends EventEmitter implements IWallet {
     return account;
   }
 
-  // sync everything, from discovery to syncing
-  // does incremental update based on what is stored in the db
-  // TODO handle fail case
+  // TODO : test fail case + incremental
   async sync() {
     if (this.syncing) {
       return this._whenSynced();
@@ -147,7 +150,7 @@ class Wallet extends EventEmitter implements IWallet {
 
     // explore derivation modes in parallel
     await Promise.all(
-      Object.values(this.derivation.DerivationMode).map((derivationMode) =>
+      Object.values(this.crypto.DerivationMode).map((derivationMode) =>
         this.syncDerivationMode(derivationMode)
       )
     );
@@ -167,125 +170,171 @@ class Wallet extends EventEmitter implements IWallet {
     });
   }
 
-  // handle returning the derivation mode adresses from locally stored blockchain data
-  // wait for sync to finish if sync is ongoing
   async getDerivationModeAccounts(derivationMode: string) {
     await this._whenSynced();
     return this.storage.getDerivationModeUniqueAccounts(derivationMode);
   }
 
-  _computeBalance(inputs, outputs) {
-    // TODO : is this dumb implem enough really ?
-    const positif = outputs.reduce((total, output) => total + output.value, 0);
-    const negatif = inputs.reduce((total, output) => total + output.value, 0);
-    return positif - negatif;
-  }
-
-  // handle returning the Wallet balance from locally stored blockchain data
-  // wait for sync to finish if sync is ongoing
   async getWalletBalance() {
     await this._whenSynced();
 
-    const outputs = await this.storage.getOutputsToInternalWalletAddresses({});
-    const inputs = await this.storage.getInputsFromInternalWalletAddresses({});
+    const addresses = await this.getWalletAddresses();
 
-    return this._computeBalance(inputs, outputs);
+    return this.getAddressesBalance(addresses);
   }
 
-  // handle returning the derivation mode balance from locally stored blockchain data
-  // wait for sync to finish if sync is ongoing
   async getDerivationModeBalance(derivationMode: string) {
     await this._whenSynced();
 
-    const outputs = await this.storage.getOutputsToInternalWalletAddresses({
-      derivationMode,
-    });
-    const inputs = await this.storage.getInputsFromInternalWalletAddresses({
-      derivationMode,
-    });
+    const addresses = await this.getDerivationModeAddresses(derivationMode);
 
-    return this._computeBalance(inputs, outputs);
+    return this.getAddressesBalance(addresses);
   }
 
-  // handle returning the account balance from locally stored blockchain data
-  // wait for sync to finish if sync is ongoing
   async getAccountBalance(derivationMode: string, account: number) {
     await this._whenSynced();
 
-    const outputs = await this.storage.getOutputsToInternalWalletAddresses({
-      derivationMode,
-      account,
-    });
-    const inputs = await this.storage.getInputsFromInternalWalletAddresses({
-      derivationMode,
-      account,
-    });
+    const addresses = await this.getAccountAddresses(derivationMode, account);
 
-    return this._computeBalance(inputs, outputs);
+    return this.getAddressesBalance(addresses);
   }
 
-  // handle returning the address balance from locally stored blockchain data
-  // wait for sync to finish if sync is ongoing
-  async getAddressBalance(
-    derivationMode: string,
-    account: number,
-    index: number
-  ) {
+  async getAddressesBalance(addresses: Address[]) {
+    const balances = await Promise.all(
+      addresses.map((address) => this.getAddressBalance(address))
+    );
+
+    return balances.reduce(
+      (total, balance) => (total || 0) + (balance || 0),
+      0
+    );
+  }
+
+  async getAddressBalance(address: Address) {
     await this._whenSynced();
 
-    const outputs = await this.storage.getOutputsToInternalWalletAddresses({
-      derivationMode,
-      account,
-      index,
-    });
-    const inputs = await this.storage.getInputsFromInternalWalletAddresses({
-      derivationMode,
-      account,
-      index,
-    });
+    // TODO SHOULD actually use getAddressLastBlockState
+    const { unspentUtxos, spentUtxos } = await this.storage.getAddressUtxos(
+      address
+    );
 
-    return this._computeBalance(inputs, outputs);
+    return (
+      unspentUtxos.reduce((total, { value }) => total + value, 0) -
+      spentUtxos.reduce((total, { value }) => total + value, 0)
+    );
   }
 
-  // TODO fetch address details from storage
-  // wait for sync to finish if sync is ongoing
-  getAddressDetailsFromAddress(address: string) {
-    return this.storage.getAddressDetails(address);
-  }
-
-  // handle returning the Wallet addresse from locally stored blockchain data
-  // wait for sync to finish if sync is ongoing
   async getWalletAddresses() {
     await this._whenSynced();
     return this.storage.getUniquesAddresses({});
   }
 
-  // handle returning the derivation mode adresses from locally stored blockchain data
-  // wait for sync to finish if sync is ongoing
   async getDerivationModeAddresses(derivationMode: string) {
     await this._whenSynced();
     return this.storage.getUniquesAddresses({ derivationMode });
   }
 
-  // handle returning the account addresses from locally stored blockchain data
-  // wait for sync to finish if sync is ongoing
   async getAccountAddresses(derivationMode: string, account: number) {
     await this._whenSynced();
     return this.storage.getUniquesAddresses({ derivationMode, account });
   }
 
-  // TODO handle returning the next account available from locally stored blockchain data
-  // wait for sync to finish if sync is ongoing
-  getNextAccount(derivationMode: string) {
-    // { derivationMode, account }
+  async getNewAccountChangeAddress(
+    derivationMode: string,
+    account: number,
+    randomGapToUse: number
+  ) {
+    await this._whenSynced();
+
+    const accountAddresses = await this.getAccountAddresses(
+      derivationMode,
+      account
+    );
+    const lastIndex = (maxBy(accountAddresses, "index") || { index: -1 }).index;
+    let index: number;
+    if (lastIndex === -1) {
+      index = 0;
+    } else {
+      index = lastIndex + randomGapToUse;
+    }
+    return this.crypto.getAddress(derivationMode, this.xpub, account, index);
   }
 
-  // TODO handle building a tx from locally stored blockchain data
-  // wait for sync to finish if sync is ongoing
-  buildTx() {}
+  async buildTx(
+    from: { derivationMode: string; account: number },
+    change:
+      | string
+      | { derivationMode: string; account: number; randomGapToUse?: number },
+    destAddress: string,
+    amount: number,
+    fee: number
+  ) {
+    await this._whenSynced();
 
-  // TODO handle broadcasting a tx, inserting the pending transaction in storage ?
-  broadcastTx() {}
+    const psbt = this.crypto.getPsbt();
+
+    // get the utxos to use as input
+    // from all addresses of the account
+    const addresses = await this.getAccountAddresses(
+      from.derivationMode,
+      from.account
+    );
+    const utxos = await Promise.all(
+      addresses.map((address) => this.storage.getAddressUtxos(address))
+    );
+
+    let unspentUtxos = utxos.reduce(
+      (unspentUtxosAcc: Output[], { unspentUtxos }) =>
+        unspentUtxosAcc.concat(unspentUtxos),
+      []
+    );
+    unspentUtxos = sortBy(unspentUtxos, "value");
+
+    // now we select only the output needed to cover the amount + fee
+    let total = 0;
+    let i = 0;
+    const unspentUtxoSelected: Output[] = [];
+    while (total < amount + fee) {
+      total += unspentUtxos[i].value;
+      unspentUtxoSelected.push(unspentUtxos[i]);
+      i += 1;
+    }
+
+    // calculate change address
+    let changeAddress: string;
+    if (typeof change === "string") {
+      changeAddress = change;
+    } else {
+      changeAddress = await this.getNewAccountChangeAddress(
+        change.derivationMode,
+        change.account,
+        change.randomGapToUse || random(this.GAP)
+      );
+    }
+
+    unspentUtxoSelected.forEach((output) => {
+      //
+      psbt.addInput({
+        hash: output.output_hash,
+        index: output.output_index,
+        address: output.address,
+      });
+
+      // Todo add the segwit / redeem / witness stuff
+    });
+
+    psbt
+      .addOutput({
+        address: destAddress,
+        value: amount,
+      })
+      .addOutput({
+        address: changeAddress,
+        value: total - amount - fee,
+      });
+
+    return psbt.toBase64();
+  }
 }
 
 export default Wallet;

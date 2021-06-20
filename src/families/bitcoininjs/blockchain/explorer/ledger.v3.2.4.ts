@@ -1,58 +1,56 @@
 import { IExplorer } from "./types";
 import EventEmitter from "../utils/eventemitter";
-import { Block, TX } from "../storage/types";
-import axios from "axios";
+import { TX } from "../storage/types";
+import axios, { AxiosInstance } from "axios";
+import axiosRetry from "axios-retry";
 import https from "https";
-import { findLastIndex } from "lodash";
+import { findIndex } from "lodash";
 
 // an Live explorer V3 class
 class LedgerV3Dot2Dot4 extends EventEmitter implements IExplorer {
-  explorerURI: string;
-  syncAddressesParallelAddresses: number = 5;
-  syncAddressesParallelRequests: number = 5;
-  syncAddressesBatchSize: number = 50;
-  // uses max 20 keep alive request in parallel
-  httpsAgent: any = new https.Agent({ keepAlive: true, maxSockets: 20 });
+  client: AxiosInstance;
 
   constructor({ explorerURI }) {
     super();
-    this.explorerURI = explorerURI;
+
+    this.client = axios.create({
+      baseURL: explorerURI,
+      // uses max 20 keep alive request in parallel
+      httpsAgent: new https.Agent({ keepAlive: true, maxSockets: 20 }),
+    });
+    // 3 retries per request
+    axiosRetry(this.client, { retries: 3 });
   }
 
-  async getNAddressTransactionsSinceBlockExcludingBlock(
-    batchSize: number,
-    address: string,
-    block: Block | undefined
-  ) {
+  async getAddressTxsSinceLastTxBlock(batchSize, address, lastTx) {
     const params = {
       no_token: "true",
       batch_size: batchSize,
     };
-    if (block) {
-      params["block_hash"] = block.hash;
+    if (lastTx) {
+      params["block_hash"] = lastTx.block.hash;
     }
 
-    const url = `${this.explorerURI}/addresses/${address}/transactions`;
+    const url = `/addresses/${address}/transactions`;
 
     this.emit("fetching-address-transaction", { url, params });
 
-    // TODO handle retries
+    // TODO add a test for failure (at the sync level)
     const res: { txs: TX[] } = (
-      await axios.get(url, {
+      await this.client.get(url, {
         params,
-        httpsAgent: this.httpsAgent,
       })
     ).data;
 
-    this.emit("fetched-address-transaction", { url, params, res });
+    // explorer returns pending tx without block at the beginning of any request
+    // we get rid of them
+    const firstNonPendingIndex = findIndex(res.txs, (tx) => !!tx.block);
 
-    // ledger live explorer include the transaction of the paginating block_hash used
-    return block
-      ? res.txs.slice(
-          0,
-          findLastIndex(res.txs, (tx) => tx.block.hash !== block.hash)
-        )
-      : res.txs;
+    const txs = res.txs.slice(firstNonPendingIndex, res.txs.length);
+
+    this.emit("fetched-address-transaction", { url, params, txs });
+
+    return txs;
   }
 }
 

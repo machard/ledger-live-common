@@ -1,56 +1,85 @@
-import { IStorage, TX } from "./types";
-import { findLast, sortBy, filter, uniq, flatten, find } from "lodash";
+import { Input, IStorage, Output, TX } from "./types";
+import { findLast, filter, uniq, uniqBy, findIndex } from "lodash";
 import fs from "fs";
 
 // a mock storage class that just use js objects
+// sql.js would be perfect for the job
 class Mock implements IStorage {
   txs: TX[] = [];
+  // indexes
+  primaryIndex: { [string]: TX } = {};
+  spentUtxos: { [string]: Input[] } = {};
+  unspentUtxos: { [string]: Output[] } = {};
 
-  async getDerivationModeLastAccount(derivationMode: string) {
-    return (findLast(this.txs, { derivationMode }) || {}).account;
+  async getLastTx(txFilter) {
+    return findLast(this.txs, txFilter);
   }
 
-  async getAccountLastIndex(derivationMode: string, account: number) {
-    return (findLast(this.txs, { derivationMode, account }) || {}).index;
+  async getAddressUtxos(address: Address) {
+    const indexAddress = address.address;
+    return {
+      unspentUtxos: this.unspentUtxos[indexAddress],
+      spentUtxos: this.spentUtxos[indexAddress],
+    };
   }
 
-  async getAddressLastBlock(
-    derivationMode: string,
-    account: number,
-    index: number
-  ) {
-    return (findLast(this.txs, { derivationMode, account, index }) || {}).block;
-  }
+  async appendTxs(txs: TX[]) {
+    const lastLength = this.txs.length;
 
-  async appendAddressTxs(txs: TX[]) {
-    this.txs = this.txs.concat(txs);
-  }
+    txs.forEach((tx) => {
+      const indexAddress = tx.address;
+      const index = `${indexAddress}-${tx.id}`;
 
-  async getAddressDetails(address) {
-    const oneTx = find(this.txs, { address });
+      if (this.primaryIndex[index]) {
+        return;
+      }
 
-    if (oneTx) {
-      return {
-        derivationMode: oneTx.derivationMode,
-        account: oneTx.account,
-        index: oneTx.index,
-      };
-    }
+      this.primaryIndex[index] = tx;
+      this.unspentUtxos[indexAddress] = this.unspentUtxos[indexAddress] || [];
+      this.spentUtxos[indexAddress] = this.spentUtxos[indexAddress] || [];
+      this.txs.push(tx);
 
-    throw "Address unknown";
+      tx.outputs.forEach((output) => {
+        if (output.address === tx.address) {
+          this.unspentUtxos[indexAddress].push(output);
+        }
+      });
+
+      tx.inputs.forEach((input) => {
+        if (input.address === tx.address) {
+          this.spentUtxos[indexAddress].push(input);
+        }
+      });
+
+      this.unspentUtxos[indexAddress] = this.unspentUtxos[indexAddress].filter(
+        (output) => {
+          const matchIndex = findIndex(
+            this.spentUtxos[indexAddress],
+            (input: Input) =>
+              input.output_hash === output.output_hash &&
+              input.output_index === output.output_index
+          );
+          if (matchIndex > -1) {
+            this.spentUtxos[indexAddress].splice(matchIndex, 1);
+            return false;
+          }
+          return true;
+        }
+      );
+    });
+
+    return this.txs.length - lastLength;
   }
 
   async getUniquesAddresses(addressesFilter) {
-    return uniq(filter(this.txs, addressesFilter).map((tx) => tx.address));
-  }
-
-  async getUniquesAddresssesMap(addressesFilter) {
-    return (await this.getUniquesAddresses(addressesFilter)).reduce(
-      (map, address) => {
-        map[address] = true;
-        return map;
-      },
-      {}
+    return uniqBy(
+      filter(this.txs, addressesFilter).map((tx) => ({
+        address: tx.address,
+        derivationMode: tx.derivationMode,
+        account: tx.account,
+        index: tx.index,
+      })),
+      "address"
     );
   }
 
@@ -58,34 +87,13 @@ class Mock implements IStorage {
     return uniq(filter(this.txs, { derivationMode }).map((tx) => tx.account));
   }
 
-  async getOutputsToInternalWalletAddresses(outputsFilter) {
-    const ownAddresses = await this.getUniquesAddresssesMap({});
-
-    return filter(
-      flatten(filter(this.txs, outputsFilter).map((tx) => tx.outputs)),
-      (output) => !!ownAddresses[output.address]
-    );
-  }
-
-  async getInputsFromInternalWalletAddresses(inputsFilter) {
-    const ownAddresses = await this.getUniquesAddresssesMap({});
-
-    return filter(
-      flatten(filter(this.txs, inputsFilter).map((tx) => tx.inputs)),
-      (input) => !!ownAddresses[input.address]
-    );
-  }
-
-  async toString() {
-    return JSON.stringify(
-      sortBy(this.txs, ["derivationMode", "account", "index", "block.height"]),
-      null,
-      2
-    );
+  async toString(sort = (txs) => txs) {
+    return JSON.stringify(sort(this.txs), null, 2);
   }
   async load(file: string) {
     //
-    this.txs = JSON.parse(fs.readFileSync(file).toString());
+    const txs = JSON.parse(fs.readFileSync(file).toString());
+    await this.appendTxs(txs);
   }
 }
 

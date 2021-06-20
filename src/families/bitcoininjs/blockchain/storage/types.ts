@@ -1,21 +1,26 @@
 export interface TX {
+  id: string,
   account: number;
   index: number;
   block: Block;
   address: string;
   derivationMode: string;
-  inputs: Input[],
-  outputs: Output[],
+  inputs: Input[];
+  outputs: Output[];
 }
 
 export interface Input {
   value: number;
   address: string;
+  output_hash: string;
+  output_index: number;
 }
 
 export interface Output {
   value: number;
   address: string;
+  output_hash: string,
+  output_index: number;
 }
 
 export interface Block {
@@ -23,48 +28,27 @@ export interface Block {
   hash: string;
 }
 
-export interface Details {
+export interface Address {
   derivationMode: string,
   account: number,
   index: number,
+  address: string,
 }
 
 export interface IStorage {
-  appendAddressTxs(txs: TX[]): Promise<void>;
-  getAddressLastBlock(
-    derivationMode: string,
-    account: number,
-    index: number
-  ): Promise<Block | undefined>;
-  getAccountLastIndex(
-    derivationMode: string,
-    account: number
-  ): Promise<number | undefined>;
-  getDerivationModeLastAccount(
-    derivationMode: string
-  ): Promise<number | undefined>;
+  appendTxs(txs: TX[]): Promise<number>;
+  getAddressUtxos(address: Address): Promise<{ unspentUtxos: Output[], spentUtxos: Input[] }>;
+  getLastTx(txFilter: {
+    derivationMode?: string,
+    account?: number,
+    index?: number,
+  }): Promise<TX | undefined>;
   getUniquesAddresses(addressesFilter: {
     derivationMode?: string,
     account?: number,
     index?: number,
-  }): Promise<string[]>;
-  getUniquesAddressesMap(addressesFilter: {
-    derivationMode?: string,
-    account?: number,
-    index?: number,
-  }): Promise<boolean[]>;
-  getAddressDetails(address:string): Promise<Details>;
-  getOutputsToInternalWalletAddresses(outputsFilter: {
-    derivationMode?: string,
-    account?: number,
-    index?: number,
-  }): Promise<Output[]>;
-  getInputsFromInternalWalletAddresses(inputsFilter: {
-    derivationMode?: string,
-    account?: number,
-    index?: number
-  }): Promise<Input[]>;
+  }): Promise<Address[]>;
   getDerivationModeUniqueAccounts(derivationMode: string): Promise<number[]>;
-  toString(): Promise<string>;
+  toString(sort?: (txs: TX[]) => TX[]): Promise<string>;
   load(file: string): Promise<void>;
 }
