@@ -6,6 +6,8 @@ import path from "path";
 import coininfo from "coininfo";
 import { toMatchFile } from "jest-file-snapshot";
 import { orderBy } from "lodash";
+import Bitcoin from "../crypto/bitcoin";
+import BitcoinCash from "../crypto/bitcoincash";
 
 const startLogging = (emitters) => {
   emitters.forEach((emitter) =>
@@ -23,52 +25,70 @@ const stopLogging = (emitters) => {
 expect.extend({ toMatchFile });
 
 describe("integration sync bitcoin mainnet / ledger explorer / mock storage", () => {
-  let explorer = new Explorer({
-    explorerURI: "https://explorers.api.vault.ledger.com/blockchain/v3/btc",
-  });
-  let crypto = new Crypto({
-    network: coininfo.bitcoin.main.toBitcoinJS(),
-  });
-
-  const xpubs = [
+  const walletDatasets = [
     {
       xpub:
         "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz", // 3000ms
       addresses: 15,
       balance: 12678243,
+      network: coininfo.bitcoin.main.toBitcoinJS(),
+      coin: "btc",
     },
     {
       xpub:
         "xpub6D4waFVPfPCpRvPkQd9A6n65z3hTp6TvkjnBHG5j2MCKytMuadKgfTUHqwRH77GQqCKTTsUXSZzGYxMGpWpJBdYAYVH75x7yMnwJvra1BUJ", // 5400ms
       addresses: 506,
       balance: 166505122,
+      network: coininfo.bitcoin.main.toBitcoinJS(),
+      coin: "btc",
+    },
+    {
+      xpub:
+        "xpub6D4waFVPfPCpRvPkQd9A6n65z3hTp6TvkjnBHG5j2MCKytMuadKgfTUHqwRH77GQqCKTTsUXSZzGYxMGpWpJBdYAYVH75x7yMnwJvra1BUJ", // 5400ms
+      addresses: 506,
+      balance: 166505122,
+      network: coininfo.bitcoin.main.toBitcoinJS(),
+      coin: "btc",
+    },
+    {
+      xpub:
+        "xpub6BvNdfGcyMB9Usq88ibXUt3KhbaEJVLFMbhTSNNfTm8Qf1sX9inTv3xL6pA6KofW4WF9GpdxwGDoYRwRDjHEir3Av23m2wHb7AqhxJ9ohE8",
+      addresses: 16,
+      balance: 360615,
+      network: coininfo.bitcoincash.main.toBitcoinJS(),
+      coin: "bch",
     },
     {
       xpub:
         "xpub6CThYZbX4PTeA7KRYZ8YXP3F6HwT2eVKPQap3Avieds3p1eos35UzSsJtTbJ3vQ8d3fjRwk4bCEz4m4H6mkFW49q29ZZ6gS8tvahs4WCZ9X", // 138sec,
       addresses: 9741,
       balance: 0,
+      network: coininfo.bitcoin.main.toBitcoinJS(),
+      coin: "btc",
     },
   ];
 
-  xpubs.forEach((xpub) =>
-    describe(`xpub ${xpub.xpub}`, () => {
+  walletDatasets.forEach((dataset) =>
+    describe(`xpub ${dataset.xpub}`, () => {
       let storage = new Storage();
       let wallet = new Wallet({
         storage,
-        explorer,
-        crypto,
-        xpub: xpub.xpub,
+        explorer: new Explorer({
+          explorerURI: `https://explorers.api.vault.ledger.com/blockchain/v3/${dataset.coin}`,
+        }),
+        //TODO refactoring factory design pattern needed
+        crypto: dataset.coin === "bch" ? new BitcoinCash(dataset.network):new Bitcoin(dataset.network),
+        xpub: dataset.xpub,
       });
 
       beforeAll(() => {
         startLogging([
           { emitter: wallet, event: "syncing", type: "address" },
-          { emitter: explorer, event: null },
+          { emitter: wallet.explorer, event: null },
         ]);
       });
       afterAll(() => {
-        stopLogging([wallet, explorer]);
+        stopLogging([wallet, wallet.explorer]);
       });
 
       it(
@@ -80,7 +100,7 @@ describe("integration sync bitcoin mainnet / ledger explorer / mock storage", ()
             __dirname,
             "data",
             "sync",
-            `${xpub.xpub}.json`
+            `${dataset.xpub}.json`
           );
 
           expect(
@@ -94,9 +114,9 @@ describe("integration sync bitcoin mainnet / ledger explorer / mock storage", ()
               ])
             )
           ).toMatchFile(truthDump);
-          expect(await wallet.getWalletBalance()).toEqual(xpub.balance);
+          expect(await wallet.getWalletBalance()).toEqual(dataset.balance);
           const addresses = await wallet.getWalletAddresses();
-          expect(addresses.length).toEqual(xpub.addresses);
+          expect(addresses.length).toEqual(dataset.addresses);
         },
         // github so slow
         15 * 60 * 1000

@@ -67,7 +67,7 @@ class Bitcoin implements ICrypto {
       case this.DerivationMode.SEGWIT:
         return this.getSegWitAddress(xpub, account, index);
       case this.DerivationMode.NATIVE:
-        return this.getNativeSegWitAddress(xpub, account, index);
+        return this.getNativeSegWitAddress(xpub, account, index);        
     }
 
     throw new Error("Should not be reachable");
