@@ -39,15 +39,6 @@ describe("integration sync bitcoin mainnet / ledger explorer / mock storage", ()
     {
       xpub:
         "xpub6D4waFVPfPCpRvPkQd9A6n65z3hTp6TvkjnBHG5j2MCKytMuadKgfTUHqwRH77GQqCKTTsUXSZzGYxMGpWpJBdYAYVH75x7yMnwJvra1BUJ", // 5400ms
-      addresses: 506,
-      derivationMode: "Legacy",
-      balance: 166505122,
-      network: coininfo.bitcoin.main.toBitcoinJS(),
-      coin: "btc",
-    },
-    {
-      xpub:
-        "xpub6D4waFVPfPCpRvPkQd9A6n65z3hTp6TvkjnBHG5j2MCKytMuadKgfTUHqwRH77GQqCKTTsUXSZzGYxMGpWpJBdYAYVH75x7yMnwJvra1BUJ", // 5400ms
       derivationMode: "Legacy",
       addresses: 506,
       balance: 166505122,
