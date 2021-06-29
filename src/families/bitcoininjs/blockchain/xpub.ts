@@ -33,7 +33,6 @@ class Xpub extends EventEmitter {
       account,
       index
     );
-
     await this._whenSynced("address", address);
 
     const data = {
