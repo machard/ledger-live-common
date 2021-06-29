@@ -45,7 +45,6 @@
       "height": 1948070,
       "time": "2020-11-16T15:44:48Z"
     },
-    "derivationMode": "Legacy",
     "account": 0,
     "index": 0,
     "address": "Ld9ivkPW5716ZM3ZZdkphKSHBCri2jbeZP"
@@ -186,7 +185,6 @@
       "height": 1949752,
       "time": "2020-11-19T12:49:55Z"
     },
-    "derivationMode": "Legacy",
     "account": 0,
     "index": 0,
     "address": "Ld9ivkPW5716ZM3ZZdkphKSHBCri2jbeZP"
@@ -327,7 +325,6 @@
       "height": 1970364,
       "time": "2020-12-24T13:49:08Z"
     },
-    "derivationMode": "Legacy",
     "account": 0,
     "index": 0,
     "address": "Ld9ivkPW5716ZM3ZZdkphKSHBCri2jbeZP"
@@ -374,7 +371,6 @@
       "height": 1973891,
       "time": "2020-12-30T10:53:38Z"
     },
-    "derivationMode": "Legacy",
     "account": 0,
     "index": 0,
     "address": "Ld9ivkPW5716ZM3ZZdkphKSHBCri2jbeZP"
@@ -473,7 +469,6 @@
       "height": 1973969,
       "time": "2020-12-30T14:57:40Z"
     },
-    "derivationMode": "Legacy",
     "account": 0,
     "index": 0,
     "address": "Ld9ivkPW5716ZM3ZZdkphKSHBCri2jbeZP"
@@ -550,7 +545,6 @@
       "height": 1999413,
       "time": "2021-02-12T09:08:32Z"
     },
-    "derivationMode": "Legacy",
     "account": 0,
     "index": 0,
     "address": "Ld9ivkPW5716ZM3ZZdkphKSHBCri2jbeZP"
@@ -594,7 +588,6 @@
       "height": 2023011,
       "time": "2021-03-25T11:55:09Z"
     },
-    "derivationMode": "Legacy",
     "account": 0,
     "index": 0,
     "address": "Ld9ivkPW5716ZM3ZZdkphKSHBCri2jbeZP"
@@ -668,7 +661,6 @@
       "height": 2023071,
       "time": "2021-03-25T14:02:15Z"
     },
-    "derivationMode": "Legacy",
     "account": 0,
     "index": 0,
     "address": "Ld9ivkPW5716ZM3ZZdkphKSHBCri2jbeZP"
@@ -732,7 +724,6 @@
       "height": 2023525,
       "time": "2021-03-26T10:26:00Z"
     },
-    "derivationMode": "Legacy",
     "account": 0,
     "index": 0,
     "address": "Ld9ivkPW5716ZM3ZZdkphKSHBCri2jbeZP"
@@ -776,7 +767,6 @@
       "height": 2023011,
       "time": "2021-03-25T11:55:09Z"
     },
-    "derivationMode": "Legacy",
     "account": 1,
     "index": 0,
     "address": "LVtfitmSuR5zxhWDkFwNuawaNtFimpbu26"
@@ -850,7 +840,6 @@
       "height": 2023071,
       "time": "2021-03-25T14:02:15Z"
     },
-    "derivationMode": "Legacy",
     "account": 1,
     "index": 0,
     "address": "LVtfitmSuR5zxhWDkFwNuawaNtFimpbu26"
@@ -924,7 +913,6 @@
       "height": 2023071,
       "time": "2021-03-25T14:02:15Z"
     },
-    "derivationMode": "Legacy",
     "account": 1,
     "index": 1,
     "address": "LWGpxMZ7ekLLBtNGomVG9kFaJJZHD1kak9"
@@ -968,7 +956,6 @@
       "height": 2023154,
       "time": "2021-03-25T17:48:25Z"
     },
-    "derivationMode": "Legacy",
     "account": 1,
     "index": 1,
     "address": "LWGpxMZ7ekLLBtNGomVG9kFaJJZHD1kak9"
@@ -1012,7 +999,6 @@
       "height": 2023154,
       "time": "2021-03-25T17:48:25Z"
     },
-    "derivationMode": "Legacy",
     "account": 1,
     "index": 2,
     "address": "LTGJ9dszH4A5ia8AZ1Xnz1FTXCFdcKeZ9D"
@@ -1076,7 +1062,6 @@
       "height": 2023525,
       "time": "2021-03-26T10:26:00Z"
     },
-    "derivationMode": "Legacy",
     "account": 1,
     "index": 2,
     "address": "LTGJ9dszH4A5ia8AZ1Xnz1FTXCFdcKeZ9D"
@@ -1140,7 +1125,6 @@
       "height": 2023525,
       "time": "2021-03-26T10:26:00Z"
     },
-    "derivationMode": "Legacy",
     "account": 1,
     "index": 3,
     "address": "LPpLfaAEm5jHiPhgHMVkmExGEGbyTfBjsV"

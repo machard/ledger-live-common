@@ -1,7 +1,7 @@
 import Storage from "../storage/mock";
 import Explorer from "../explorer/mock";
 import Crypto from "../crypto/bitcoin";
-import Wallet from "../wallet";
+import Xpub from "../xpub";
 import path from "path";
 import coininfo from "coininfo";
 import { zipObject } from "lodash";
@@ -12,16 +12,17 @@ describe("synced wallet utilites functions", () => {
     network: coininfo.bitcoin.main.toBitcoinJS(),
   });
 
-  describe("xpub xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz", () => {
-    let xpub =
+  describe("xpub xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz Legacy", () => {
+    let xpubraw =
       "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz";
-    let truthDump = path.join(__dirname, "data", "sync", `${xpub}.json`);
+    let truthDump = path.join(__dirname, "data", "sync", `${xpubraw}.json`);
     let storage = new Storage();
-    let wallet = new Wallet({
+    let xpub = new Xpub({
       storage,
       explorer,
       crypto,
-      xpub,
+      xpub: xpubraw,
+      derivationMode: "Legacy",
     });
 
     beforeAll(() => {
@@ -29,32 +30,15 @@ describe("synced wallet utilites functions", () => {
     });
 
     it("should compute accounts/addresses/balances correctly", async () => {
-      const addresses = await wallet.getWalletAddresses();
+      const addresses = await xpub.getXpubAddresses();
       expect(addresses.length).toEqual(15);
 
-      expect(
-        (await wallet.getDerivationModeAddresses("Legacy")).length
-      ).toEqual(15);
-      expect((await wallet.getDerivationModeAccounts("Legacy")).length).toEqual(
-        1
-      );
-      expect((await wallet.getAccountAddresses("Legacy", 0)).length).toEqual(
-        15
-      );
+      expect((await xpub.getAccountAddresses(0)).length).toEqual(15);
 
-      expect(
-        (await wallet.getDerivationModeAddresses("Native SegWit")).length
-      ).toEqual(0);
-
-      expect(
-        (await wallet.getDerivationModeAddresses("SegWit")).length
-      ).toEqual(0);
-
-      expect(await wallet.getWalletBalance()).toEqual(12678243);
-      expect(await wallet.getDerivationModeBalance("Legacy")).toEqual(12678243);
-      expect(await wallet.getAccountBalance("Legacy", 0)).toEqual(12678243);
+      expect(await xpub.getXpubBalance()).toEqual(12678243);
+      expect(await xpub.getAccountBalance(0)).toEqual(12678243);
       const addressesBalances = await Promise.all(
-        addresses.map((address) => wallet.getAddressBalance(address))
+        addresses.map((address) => xpub.getAddressBalance(address))
       );
       expect(
         zipObject(
@@ -78,27 +62,6 @@ describe("synced wallet utilites functions", () => {
         "1MS6eGqD4iUGyJPbEsjqmoNaRhApgtmF8J": 1800,
         "1PJMBXKBYEBMRDmpAoBRbDff26gHJrawSp": 100000,
       });
-    });
-
-    it("should build a tx", async () => {
-      const tx = await wallet.buildTx(
-        {
-          derivationMode: "Legacy",
-          account: 0,
-        },
-        {
-          derivationMode: "Legacy",
-          account: 0,
-          randomGapToUse: 3,
-        },
-        "1F1tAaz5x1HUXrCNLbtMDqcw6o5GNn4xqX",
-        1000,
-        500
-      );
-
-      expect(tx).toEqual(
-        "cHNidP8BAKACAAAAAiioTCpdpy43FfWLclM8U0HQaYR/0OaEnGhojt3sbr6KAAAAAAD/////gMQQyMOHBllaf7zpmaiSZ+DK0hoi2+iYBnyaSkdFRKIAAAAAAP////8C6AMAAAAAAAAZdqkUmbx4uld6laEfGjRNTSrlXy+Fe5iIrJwAAAAAAAAAGXapFBhs7WHzRqWSa0m1xDcWTnTQujBtiKwAAAAAAAAAAAA="
-      );
     });
   });
 });

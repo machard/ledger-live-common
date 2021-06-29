@@ -5,12 +5,14 @@ import axios, { AxiosInstance } from "axios";
 import axiosRetry from "axios-retry";
 import https from "https";
 import { findIndex } from "lodash";
+import { batch } from "react-redux";
 
 // an Live explorer V3 class
 class LedgerV3Dot2Dot4 extends EventEmitter implements IExplorer {
   client: AxiosInstance;
+  disableBatchSize: boolean = false;
 
-  constructor({ explorerURI }) {
+  constructor({ explorerURI, disableBatchSize }) {
     super();
 
     this.client = axios.create({
@@ -20,6 +22,24 @@ class LedgerV3Dot2Dot4 extends EventEmitter implements IExplorer {
     });
     // 3 retries per request
     axiosRetry(this.client, { retries: 3 });
+
+    this.disableBatchSize = disableBatchSize;
+  }
+
+  async broadcast(tx: string) {
+    const url = "/transactions/send";
+    return this.client.post(url, { tx });
+  }
+
+  async getTxHex(txId: string) {
+    const url = `/transactions/${txId}/hex`;
+
+    this.emit("fetching-transaction-tx", { url, txId });
+
+    // TODO add a test for failure (at the sync level)
+    const res = (await this.client.get(url)).data;
+
+    return res[0].hex;
   }
 
   async getAddressTxsSinceLastTxBlock(
@@ -29,8 +49,10 @@ class LedgerV3Dot2Dot4 extends EventEmitter implements IExplorer {
   ) {
     const params = {
       no_token: "true",
-      batch_size: batchSize,
     };
+    if (!this.disableBatchSize) {
+      params["batch_size"] = batchSize;
+    }
     if (lastTx) {
       params["block_hash"] = lastTx.block.hash;
     }
@@ -56,7 +78,6 @@ class LedgerV3Dot2Dot4 extends EventEmitter implements IExplorer {
       // no need to keep that as it changes
       delete tx["confirmations"];
 
-      tx.derivationMode = address.derivationMode;
       tx.account = address.account;
       tx.index = address.index;
       tx.address = address.address;
