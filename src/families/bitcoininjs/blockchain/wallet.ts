@@ -30,7 +30,6 @@ class Wallet extends EventEmitter implements IWallet {
       account,
       index
     );
-
     await this._whenSynced("address", address);
 
     const data = {
